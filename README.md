@@ -1,8 +1,4 @@
 # GPT Engineer
-[![Discord Follow](https://dcbadge.vercel.app/api/server/4t5vXHhu?style=flat)](https://discord.gg/4t5vXHhu)
-[![GitHub Repo stars](https://img.shields.io/github/stars/AntonOsika/gpt-engineer?style=social)](https://github.com/AntonOsika/gpt-engineer)
-[![Twitter Follow](https://img.shields.io/twitter/follow/antonosika?style=social)](https://twitter.com/AntonOsika)
-
 
 ## Fork Information
 This fork serves to replace OpenAI's ChatGPT with GPT4All to allow for offline use with open source model that can generate commercial content (Though make sure the model you choose allows this. Licensing is a tricky thing and it's completely up to you how you deal with it)
@@ -26,24 +22,9 @@ GPT Engineer is made to be easy to adapt, extend, and make your agent learn how 
 
 ## Usage
 
-Choose either **stable** or **development**.
-
-For **stable** release:
-
-- `pip install gpt-engineer`
-
-For **development**:
-- `git clone git@github.com:AntonOsika/gpt-engineer.git`
-- `cd gpt-engineer`
-- `make install`
-- `source venv/bin/activate`
-
-**Setup**
-
-With an api key that has GPT4 access run:
-
-- `export OPENAI_API_KEY=[your api key]`
-
+**Setup**:
+- `pip install -r requirements.txt`
+- `export OPENAI_API_KEY=[your api key]` with a key that has GPT4 access
 
 **Run**:
 - Create an empty folder. If inside the repo, you can run:
