@@ -1,5 +1,19 @@
+from __future__ import annotations
+
+import logging
+
 from gpt4all import GPT4All
-from typing import List, Dict
+
+FORMAT_ALPACA = {
+    "system": "### Instruction:",
+    "prompt": "### Input:",
+    "response": "### Response:",
+}
+
+FORMAT = FORMAT_ALPACA
+
+logger = logging.getLogger(__name__)
+
 
 class AI:
     model: GPT4All = None
@@ -15,7 +29,7 @@ class AI:
 
     def start(self, system, user):
         messages = [
-            {"role": "system", "content": f"### Instruction: {system}"},
+            {"role": "system", "content": f"{FORMAT['system']}: {system}"},
             {"role": "user", "content": user},
         ]
 
@@ -26,16 +40,28 @@ class AI:
 
     def fuser(self, msg):
         return {"role": "user", "content": msg}
-    
+
     def fassistant(self, msg):
         return {"role": "assistant", "content": msg}
 
     def next(self, messages: list[dict[str, str]], prompt=None):
-        if "### System:" not in messages[0]["content"]:
-            messages[0]["content"] = "### System: " + messages[0]["content"]
+        if FORMAT["system"] not in messages[0]["content"]:
+            messages[0]["content"] = FORMAT["system"] + " " + messages[0]["content"]
         if prompt:
-            messages = messages + [{"role": "user", "content": f'### Prompt: \n{prompt}'}]
+            messages = messages + [
+                {"role": "user", "content": f"{FORMAT['prompt']} \n{prompt}"}
+            ]
+        logger.debug(f"Creating a new chat completion: {messages}")
 
-        response = AI.model.chat_completion(messages=messages, verbose=True, streaming=True, default_prompt_header=False, n_ctx=8192, n_predict=2048, **self.kwargs)
+        response = AI.model.chat_completion(
+            messages=messages,
+            verbose=True,
+            streaming=True,
+            default_prompt_header=False,
+            n_ctx=32768,
+            n_predict=4096,
+            **self.kwargs,
+        )
 
-        return messages + [response['choices'][0]['message']]
+        logger.debug(f"Chat completion finished: {messages}")
+        return messages + [response["choices"][0]["message"]]
