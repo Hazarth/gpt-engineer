@@ -168,8 +168,8 @@ class GenerateUnitTests(Step):
         """
         messages = [
             ai.fsystem(setup_sys_prompt(dbs)),
-            ai.fuser(f"Instructions: {dbs.input['main_prompt']}"),
-            ai.fuser(f"Specification:\n\n{dbs.memory['specification']}"),
+            ai.fuser(f"### Instructions: {dbs.input['main_prompt']}"),
+            ai.fuser(f"### Specification:\n\n{dbs.memory['specification']}"),
         ]
 
         messages = ai.next(messages, dbs.identity["unit_tests"])
@@ -189,9 +189,9 @@ class GenerateCode(Step):
 
         messages = [
             ai.fsystem(setup_sys_prompt(dbs)),
-            ai.fuser(f"Instructions: {dbs.input['main_prompt']}"),
-            ai.fuser(f"Specification:\n\n{dbs.memory['specification']}"),
-            ai.fuser(f"Unit tests:\n\n{dbs.memory['unit_tests']}"),
+            ai.fuser(f"### Instructions: {dbs.input['main_prompt']}"),
+            ai.fuser(f"### Specification:\n\n{dbs.memory['specification']}"),
+            ai.fuser(f"### Unit tests:\n\n{dbs.memory['unit_tests']}"),
         ]
         messages = ai.next(messages, dbs.identity["use_qa"])
         to_files(messages[-1]["content"], dbs.workspace)
