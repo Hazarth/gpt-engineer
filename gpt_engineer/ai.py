@@ -81,7 +81,7 @@ class AI:
             messages[0]["content"] = FORMAT["system"] + " " + messages[0]["content"]
         if prompt:
             messages = messages + [
-                {"role": "user", "content": f"{FORMAT['prompt']} \n{prompt}"}
+                {"role": "user", "content": f"{FORMAT['prompt']} \n{prompt}\n"}
             ]
         logger.debug(f"Creating a new chat completion: {messages}")
 
