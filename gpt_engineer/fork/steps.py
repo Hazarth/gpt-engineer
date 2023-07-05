@@ -1,11 +1,13 @@
 import json
+import re
 import subprocess
 
 from typing import List
 
 from gpt_engineer.ai import AI
-from gpt_engineer.chat_to_files import parse_chat, to_files
+from gpt_engineer.chat_to_files import to_files
 from gpt_engineer.db import DBs
+from gpt_engineer.learning import human_input
 
 
 class Step:
@@ -39,7 +41,9 @@ class StepRunner:
 
 
 def setup_sys_prompt(dbs):
-    return dbs.identity["generate"] + "\nUseful to know:\n" + dbs.identity["philosophy"]
+    return (
+        dbs.preprompts["generate"] + "\nUseful to know:\n" + dbs.preprompts["philosophy"]
+    )
 
 
 class ClarificationStep(Step):
@@ -53,19 +57,19 @@ class ClarificationStep(Step):
         Ask the user if they want to clarify anything
         and save the results to the workspace
         """
-        messages = [ai.fsystem(dbs.identity["qa"])]
+        messages = [ai.fsystem(dbs.preprompts["qa"])]
         user = dbs.input["main_prompt"]
         while True:
             messages = ai.next(messages, user)
 
-            if messages[-1]["content"].strip().lower() == "no":
+            if messages[-1]["content"].strip().lower().startswith("no"):
                 break
 
             print()
-            user = input('(answer in text, or "q" to move on)\n')
+            user = input('(answer in text, or "c" to move on)\n')
             print()
 
-            if not user or user == "q":
+            if not user or user == "c":
                 break
 
             user += (
@@ -80,7 +84,7 @@ class ClarificationStep(Step):
         return messages
 
 
-class RunLatest(Step):
+class GenClarifiedCode(Step):
     step_id: str = "run_latest"
 
     def __init__(self):
@@ -93,7 +97,7 @@ class RunLatest(Step):
         messages = [
             ai.fsystem(setup_sys_prompt(dbs)),
         ] + messages[1:]
-        messages = ai.next(messages, dbs.identity["use_qa"])
+        messages = ai.next(messages, dbs.preprompts["use_qa"])
         to_files(messages[-1]["content"], dbs.workspace)
         return messages
 
@@ -111,11 +115,11 @@ class Planning(Step):
         messages = [
             ai.fsystem("You provide additional creative information about the project."),
         ] + messages[1:]
-        messages = ai.next(messages, dbs.identity["planning"])
+        messages = ai.next(messages, dbs.preprompts["planning"])
         return messages
 
 
-class RunMain(Step):
+class SimpleGen(Step):
     step_id: str = "run_main"
 
     def __init__(self):
@@ -123,10 +127,7 @@ class RunMain(Step):
 
     def run(self, ai: AI, dbs: DBs):
         """Run the AI on the main prompt and save the results"""
-        messages = ai.start(
-            setup_sys_prompt(dbs),
-            dbs.input["main_prompt"],
-        )
+        messages = ai.start(setup_sys_prompt(dbs), dbs.input["main_prompt"], self.step_id)
         to_files(messages[-1]["content"], dbs.workspace)
         return messages
 
@@ -144,10 +145,10 @@ class GenerateSpec(Step):
         """
         messages = [
             ai.fsystem(setup_sys_prompt(dbs)),
-            ai.fsystem(f"Instruction: {dbs.input['main_prompt']}"),
+            ai.fsystem(f"Instructions: {dbs.input['main_prompt']}"),
         ]
 
-        messages = ai.next(messages, dbs.identity["spec"])
+        messages = ai.next(messages, dbs.preprompts["spec"])
 
         dbs.memory["specification"] = messages[-1]["content"]
 
@@ -162,7 +163,7 @@ class ReSpec(Step):
 
     def run(self, ai: AI, dbs: DBs):
         messages = dbs.logs[GenerateSpec.step_id]
-        messages += [ai.fsystem(dbs.identity["respec"])]
+        messages += [ai.fsystem(dbs.preprompts["respec"])]
 
         messages = ai.next(messages)
         messages = ai.next(
@@ -197,7 +198,7 @@ class GenerateUnitTests(Step):
             ai.fuser(f"Specification:\n\n{dbs.memory['specification']}"),
         ]
 
-        messages = ai.next(messages, dbs.identity["unit_tests"])
+        messages = ai.next(messages, dbs.preprompts["unit_tests"])
 
         dbs.memory["unit_tests"] = messages[-1]["content"]
         to_files(dbs.memory["unit_tests"], dbs.workspace)
@@ -220,7 +221,7 @@ class GenerateCode(Step):
             ai.fuser(f"Specification:\n\n{dbs.memory['specification']}"),
             ai.fuser(f"Unit tests:\n\n{dbs.memory['unit_tests']}"),
         ]
-        messages = ai.next(messages, dbs.identity["use_qa"])
+        messages = ai.next(messages, dbs.preprompts["use_qa"])
         to_files(messages[-1]["content"], dbs.workspace)
         return messages
 
@@ -250,11 +251,18 @@ class ExecuteEntrypoint(Step):
         print()
         print(command)
         print()
-        print('If yes, press enter. If no, type "no"')
+        print('If yes, press enter. Otherwise, type "no"')
         print()
-        if input() == "no":
+        if input() not in ["", "y", "yes"]:
             print("Ok, not executing the code.")
+            return []
         print("Executing the code...")
+        print(
+            "\033[92m"  # green color
+            + "Note: If it does not work as expected, please consider running the code'"
+            + " in another way than above."
+            + "\033[0m"
+        )
         print()
         subprocess.run("bash run.sh", shell=True, cwd=dbs.workspace.path)
         return []
@@ -269,22 +277,25 @@ class GenerateEntrypoint(Step):
     def run(self, ai: AI, dbs: DBs):
         messages = ai.start(
             system=(
-                "You will get information about a codebase that is currently "
-                "on disk in the current folder.\n"
-                "From this you will answer with one code block that "
-                "includes all the necessary macos terminal commands to "
+                "You will get information about a codebase that is currently on disk in "
+                "the current folder.\n"
+                "From this you will answer with code blocks that includes all the "
+                "necessary unix terminal commands to "
                 "a) install dependencies "
-                "b) run all necessary parts of the codebase "
-                "(in parallell if necessary).\n"
+                "b) run all necessary parts of the codebase (in parallel if necessary).\n"
                 "Do not install globally. Do not use sudo.\n"
                 "Do not explain the code, just give the commands.\n"
+                "Do not use placeholders, use example values "
+                "(like . for a folder argument) if necessary.\n"
             ),
             user="Information about the codebase:\n\n" + dbs.workspace["all_output.txt"],
+            step_name=self.step_id,
         )
         print()
-        [[lang, command]] = parse_chat(messages[-1]["content"])
-        assert lang in ["", "bash", "sh"]
-        dbs.workspace["run.sh"] = command
+
+        regex = r"```\S*\n(.+?)```"
+        matches = re.finditer(regex, messages[-1]["content"], re.DOTALL)
+        dbs.workspace["run.sh"] = "\n".join(match.group(1) for match in matches)
         return messages
 
 
@@ -299,7 +310,7 @@ class UseFeedback(Step):
             ai.fsystem(setup_sys_prompt(dbs)),
             ai.fuser(f"Instructions: {dbs.input['main_prompt']}"),
             ai.fassistant(dbs.workspace["all_output.txt"]),
-            ai.fsystem(dbs.identity["use_feedback"]),
+            ai.fsystem(dbs.preprompts["use_feedback"]),
         ]
         messages = ai.next(messages, dbs.input["feedback"])
         to_files(messages[-1]["content"], dbs.workspace)
@@ -318,8 +329,20 @@ class FixCode(Step):
             ai.fsystem(setup_sys_prompt(dbs)),
             ai.fuser(f"Instructions: {dbs.input['main_prompt']}"),
             ai.fuser(code_ouput),
-            ai.fsystem(dbs.identity["fix_code"]),
+            ai.fsystem(dbs.preprompts["fix_code"]),
         ]
         messages = ai.next(messages, "Please fix any errors in the code above.")
         to_files(messages[-1]["content"], dbs.workspace)
         return messages
+
+
+class HumanReview(Step):
+    step_id: str = "human_review"
+
+    def __init__(self):
+        Step.__init__(self, "Human Review")
+
+    def run(self, ai: AI, dbs: DBs):
+        review = human_input()
+        dbs.memory["review"] = review.to_json()  # type: ignore
+        return []
