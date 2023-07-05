@@ -36,6 +36,13 @@ class AI:
 
     def __init__(self, model, temperature=0.1):
         self.temperature = temperature
+        self.model = model
+
+        # initialize token usage log
+        self.cumulative_prompt_tokens = 0
+        self.cumulative_completion_tokens = 0
+        self.cumulative_total_tokens = 0
+        self.token_usage_log = []
 
         # initialize token usage log
         self.cumulative_prompt_tokens = 0

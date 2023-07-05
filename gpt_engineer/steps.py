@@ -19,6 +19,7 @@ from gpt_engineer.fork.steps import (
     StepRunner,
     UseFeedback,
 )
+from gpt_engineer.learning import human_input
 
 
 def setup_sys_prompt(dbs):
@@ -30,6 +31,12 @@ def runner(steps: List[Step]):
         return StepRunner(ai, dbs, steps)
 
     return construct
+
+
+def human_review(ai: AI, dbs: DBs):
+    review = human_input()
+    dbs.memory["review"] = review.to_json()  # type: ignore
+    return []
 
 
 class Config(str, Enum):
