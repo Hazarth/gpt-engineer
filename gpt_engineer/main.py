@@ -1,15 +1,14 @@
 import logging
-import os
-import shutil
 
 from pathlib import Path
 
 import typer
 
-from gpt_engineer import steps
-from gpt_engineer.ai import AI
-from gpt_engineer.db import DB, DBs
-from gpt_engineer.steps import STEPS
+from gpt_engineer.ai import AI, fallback_model
+from gpt_engineer.collect import collect_learnings
+from gpt_engineer.db import DB, DBs, archive
+from gpt_engineer.learning import collect_consent
+from gpt_engineer.steps import STEPS, Config as StepsConfig
 
 app = typer.Typer()
 
@@ -18,45 +17,52 @@ app = typer.Typer()
 def main(
     project_path: str = typer.Argument("example", help="path"),
     delete_existing: bool = typer.Argument(False, help="delete existing files"),
-    model: str = "ggml-v3-13b-hermes-q5_1.bin",
+    model: str = typer.Argument("ggml-v3-13b-hermes-q5_1.bin", help="model id string"),
     temperature: float = 0.1,
-    steps_config: steps.Config = typer.Option(
-        steps.Config.DEFAULT, "--steps", "-s", help="decide which steps to run"
+    steps_config: StepsConfig = typer.Option(
+        StepsConfig.DEFAULT, "--steps", "-s", help="decide which steps to run"
     ),
     verbose: bool = typer.Option(False, "--verbose", "-v"),
-    run_prefix: str = typer.Option(
-        "",
-        help=(
-            "run prefix, if you want to run multiple variants of the same project and "
-            "later compare them"
-        ),
-    ),
 ):
     logging.basicConfig(level=logging.DEBUG if verbose else logging.INFO)
 
-    input_path = Path(project_path).absolute()
-    memory_path = input_path / f"{run_prefix}memory"
-    workspace_path = input_path / f"{run_prefix}workspace"
-
-    if delete_existing:
-        # Delete files and subdirectories in paths
-        shutil.rmtree(memory_path, ignore_errors=True)
-        shutil.rmtree(workspace_path, ignore_errors=True)
-
+    model = fallback_model(model)
     ai = AI(
         model=model,
-        temp=temperature,
+        temperature=temperature,
     )
+
+    input_path = Path(project_path).absolute()
+    memory_path = input_path / "memory"
+    workspace_path = input_path / "workspace"
+    archive_path = input_path / "archive"
 
     dbs = DBs(
         memory=DB(memory_path),
         logs=DB(memory_path / "logs"),
         input=DB(input_path),
         workspace=DB(workspace_path),
-        identity=DB(Path(os.path.curdir) / "identity"),
+        preprompts=DB(Path(__file__).parent / "preprompts"),
+        archive=DB(archive_path),
     )
 
+    if steps_config not in [
+        StepsConfig.EXECUTE_ONLY,
+        StepsConfig.USE_FEEDBACK,
+        StepsConfig.EVALUATE,
+    ]:
+        archive(dbs)
+
+    steps = STEPS[steps_config]
     STEPS[steps_config](ai, dbs).run()
+    # for step in steps:
+    #    messages = step(ai, dbs)
+    #    dbs.logs[step.__name__] = json.dumps(messages)
+
+    if collect_consent():
+        collect_learnings(model, temperature, steps, dbs)
+
+    dbs.logs["token_usage"] = ai.format_token_usage_log()
 
 
 if __name__ == "__main__":
